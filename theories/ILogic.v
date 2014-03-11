@@ -7,9 +7,9 @@ Class ILogic (L : Type) : Type :=
 ; limpl : L -> L -> L
 }.
 
-Class Qaunt (L : Type) (I : Type) (U : I -> Type) : Type :=
-{ lforall : forall (i : I), (U i -> L) -> L
-; lexists : forall (i : I), (U i -> L) -> L
+Class Quant (L : Type) : Type :=
+{ lforall : forall (i : Type), (i -> L) -> L
+; lexists : forall (i : Type), (i -> L) -> L
 }.
 
 
@@ -29,4 +29,14 @@ Instance ILogic_Fun (T L : Type) (IL : ILogic L) : ILogic (T -> L) :=
 ; land := fun P Q x => land (P x) (Q x)
 ; lor := fun P Q x => lor (P x) (Q x)
 ; limpl := fun P Q x => limpl (P x) (Q x)
+}.
+
+Instance Quant_Prop : Quant Prop :=
+{ lforall := fun T P => forall x : T, P x
+; lexists := fun T P => exists x : T, P x
+}.
+
+Instance Quant_Fun (T L : Type) (IL : Quant L) : Quant (T -> L) :=
+{ lforall := fun T P x => lforall T (fun y => P y x)
+; lexists := fun T P x => lexists T (fun y => P y x)
 }.

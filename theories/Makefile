@@ -1,4 +1,6 @@
+EXCLUDES   := FuelLob5
 MODULES    := $(patsubst %.v,%,$(wildcard *.v))
+MODULES    := $(filter-out $(EXCLUDES),$(MODULES))
 TESTS      :=
 VS         := $(MODULES:%=%.v)
 TVS        := $(TESTS:%=%.v)

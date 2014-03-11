@@ -8,16 +8,6 @@ Require Import MFix.FuelLob3.
 Set Implicit Arguments.
 Set Maximal Implicit Insertion.
 
-
-Instance ILogic_Fuel P (IL : ILogic P) : ILogic (fuel -> P) :=
-{ lentails := fun P Q => forall f, lentails (P f) (Q f)
-; ltrue := fun _ => ltrue
-; lfalse := fun _ => lfalse
-; land := fun P Q n => land (P n) (Q n)
-; lor := fun P Q n => lor (P n) (Q n)
-; limpl := fun P Q n => limpl (P n) (Q n)
-}.
-
 Section IndexedInd.
   (* Indexed fixpoint induction, take4 *)
   (* Critique:
@@ -30,45 +20,47 @@ Section IndexedInd.
   Definition atleast (n : nat) : FuelProp :=
     fun fuel => fuel >= n.
 
+  (** ?? **)
   Definition later (fp : FuelProp) : FuelProp :=
     fun n => match n with
-               | 0 => ltrue
+               | 0 => lfalse
                | S n => fp n
              end.
 
-  Definition satisfies {B} (c : M B) (P : option B -> FuelProp) : FuelProp :=
-    fun fuel => match fuel with
-                  | 0 => ltrue
-                  | _ => P (c fuel) fuel
-                end.
-  Definition satisfiesF {A B} (c : A -> M B) (P : (A -> option B) -> FuelProp) : FuelProp :=
-    fun fuel => match fuel with
-                  | 0 => ltrue
-                  | _ =>
-                    P (fun x => c x fuel) fuel
+  Definition satisfies {B} (c : M B) (P : B -> FuelProp) : FuelProp :=
+    fun fuel => match c fuel with
+                  | None => ltrue
+                  | Some x => P x fuel
                 end.
 
+  Definition satisfiesF {A B} (P : A -> B -> FuelProp) (c : A -> M B) : FuelProp :=
+    fun fuel =>
+      forall x,
+        match c x fuel with
+          | None => ltrue
+          | Some v =>
+            P x v fuel
+        end.
+
   Variable (A B : Type).
-  Variable P : (A -> option B) -> FuelProp.
+  Variable P : A -> B -> FuelProp.
   Variable f : (A -> M B) -> (A -> M B).
 
   Hypothesis Step
   : forall (r : A -> M B),
       monotoneF r ->
-      lentails (later (satisfiesF r P)) (satisfiesF (f r) P).
+      lentails (later (satisfiesF P r)) (satisfiesF P (f r)).
 
-  Theorem mfixind1 : lentails ltrue (satisfiesF (mfix f) P).
-    specialize (fun z =>
-                  @mfixind1' A B (fun fuel g =>
-                                    satisfiesF (fun x _ => g x) P
-                                               fuel)
-                             z f).
-    intros. intro. intro.
-    eapply H; clear H.
-    { red. simpl. auto. }
-    { intros. simpl in *.
-      specialize (fun r mR => @Step r mR (S n)).
-      simpl in *. apply Step. assumption. clear - H. apply H. }
+  Theorem mfixind1 : lentails ltrue (satisfiesF P (mfix f)).
+  Proof.
+    red. simpl. intros x [].
+    induction x.
+    { compute. auto. }
+    { simpl in *. unfold satisfiesF in *. simpl in *.
+      eapply Step.
+      { red. red. intros.
+        destruct (mfix f x0 x); constructor. }
+      { simpl. auto. } }
   Qed.
 End IndexedInd.
 
@@ -92,10 +84,28 @@ Module ExampleFactorial.
       | (S n') => n * (rfact n')
     end.
 
-  Definition Pfact (f : nat -> M nat) : FuelProp :=
-    lforall nat (fun n => limpl (atleast n) (satisfiesF f (fun fA => Inj (fA n = Some (rfact n))))).
+  Definition Pfact : (nat -> M nat) -> FuelProp :=
+    satisfiesF (fun n fn => limpl (atleast n) (Inj (fn = rfact n))).
 
-  Example 
+  Example fact_correct
+  : lentails ltrue (Pfact fact).
+  Proof.
+    eapply mfixind1.
+    { unfold mkfact, satisfiesF, later; simpl. intros.
+      destruct x0; simpl.
+      { reflexivity. }
+      { unfold bind.
+        destruct x.
+        { inversion H0. }
+        { specialize (H0 x0).
+          assert (x < S x) by omega.
+          do 2 red in H. specialize (H x0 x (S x) H1).
+          inversion H.
+          { subst. rewrite <- H3 in *.
+          
+        remember (r x0 x). destruct o.
+        { simpl. intros. red.
+
 
   Example fact_correct :
     forall m,  (m > n) -> fact n m = Some (rfact n).
