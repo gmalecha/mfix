@@ -3,10 +3,33 @@ Require Import Omega.
 Require Import MFix.Monad.
 Require Import MFix.ILogic.
 Require Import MFix.Fuel.
-Require Import MFix.FuelLob3.
 
 Set Implicit Arguments.
 Set Strict Implicit.
+
+Section monotone.
+
+  Inductive LTE_option {A}  : option A -> option A -> Prop :=
+  | None_LTE :  forall x  , LTE_option None x
+  | Some_LTE :  forall (x : A), LTE_option (Some x) (Some x).
+
+  Definition lteM {A} (mx : M A) (my : M A) :=
+    forall n, LTE_option (mx n) (my n).
+
+  Definition monotoneM {A} (r : M A) : Prop :=
+    forall n m, n < m -> LTE_option (r n) (r m).
+
+  Definition monotoneF {A B} (f : A -> M B) : Prop :=
+    forall x, monotoneM (f x).
+
+  Definition lteP {A} (P Q : M A -> Prop) : Prop :=
+    forall x y, lteM x y -> P x -> P y.
+
+  Definition ltePF {A B} (P Q : (B -> M A) -> Prop) : Prop :=
+    forall v : B,
+    forall x y, lteM (x v) (y v) -> P x -> P y.
+
+End monotone.
 
 Section IndexedInd.
   (* Indexed fixpoint induction, take4 *)
@@ -22,40 +45,37 @@ Section IndexedInd.
 
   (** ?? **)
   Definition later (fp : FuelProp) : FuelProp :=
-    fun n => match n with
-               | 0 => lfalse
-               | S n => fp n
-             end.
+    fun n => forall m, m < n -> fp m.
 
-  Definition satisfies {B} (c : M B) (P : B -> FuelProp) : FuelProp :=
+  Definition now {B} (c : M B) (P : B -> FuelProp) : FuelProp :=
     fun fuel => match c fuel with
                   | None => ltrue
                   | Some x => P x fuel
                 end.
 
-  Definition satisfiesF {A B} (P : A -> B -> FuelProp) (c : A -> M B) : FuelProp :=
+  Definition nowF {A B} (c : A -> M B) (P : A -> B -> FuelProp) : FuelProp :=
     fun fuel =>
-      forall x,
-        match c x fuel with
-          | None => ltrue
-          | Some v =>
-            P x v fuel
-        end.
+      lforall A (fun x => match c x fuel with
+                            | None => ltrue
+                            | Some v => P x v fuel
+                          end).
 
   Variable (A B : Type).
-  Variable P : A -> B -> FuelProp.
+  Variable P : (A -> M B) -> FuelProp.
+  Hypothesis Pok : forall x y,
+                     (forall v, lteM (x v) (y v)) ->
+                     (forall n m, n <= m -> P x m -> P y n).
   Variable f : (A -> M B) -> (A -> M B).
+  Variable G : FuelProp.
 
   Hypothesis Step
-  : forall (r : A -> M B),
-      monotoneF r ->
-      lentails (later (satisfiesF P r)) (satisfiesF P (f r)).
+  : lentails G (limpl (P (mfix f)) (P (f (mfix f)))).
 
-  Theorem mfixind1 : lentails ltrue (satisfiesF P (mfix f)).
+  Theorem mfixind1 : lentails G (P (mfix f)).
   Proof.
-    red. simpl. intros x [].
+    red. simpl. 
     induction x.
-    { compute. auto. }
+    { ?? }
     { simpl in *. unfold satisfiesF in *. simpl in *.
       eapply Step.
       { red. red. intros.
