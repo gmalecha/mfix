@@ -1,5 +1,6 @@
 Require Import Lt.
 Require Import Omega.
+Require Import RelationClasses.
 Require Import MFix.Monad.
 Require Import MFix.ILogic.
 Require Import MFix.Fuel.
@@ -63,20 +64,44 @@ Section IndexedInd.
   Variable (A B : Type).
   Variable P : (A -> M B) -> FuelProp.
   Hypothesis Pok : forall x y,
-                     (forall v, lteM (x v) (y v)) ->
-                     (forall n m, n <= m -> P x m -> P y n).
+                     (forall v, lteM (y v) (x v)) ->
+                     (forall n m, m <= n -> P x m -> P y n).
   Variable f : (A -> M B) -> (A -> M B).
   Variable G : FuelProp.
 
   Hypothesis Step
   : lentails G (limpl (P (mfix f)) (P (f (mfix f)))).
 
+  Instance Refl_lteM {T} : Reflexive (@lteM T).
+  Proof.
+    red. intro. red. intros.
+    destruct (x n). constructor. constructor.
+    (** TODO: cleaner proof **)
+  Qed.
+
+  (** TODO: It really seems like there should be two rules, one for proving
+   ** total correctness and the other for proving partial correctness
+   **)
   Theorem mfixind1 : lentails G (P (mfix f)).
   Proof.
     red. simpl. 
     induction x.
-    { ?? }
-    { simpl in *. unfold satisfiesF in *. simpl in *.
+    { (* intros. eapply Pok.
+      { instantiate (1 := fun _ _ => None). simpl.
+        intros. constructor. }
+      { 
+      
+      
+*) admit.
+ }
+    { simpl in *.
+      intros. eapply Pok.
+      2: instantiate (1 := x); auto.
+      2: eapply Step.
+      
+
+
+unfold satisfiesF in *. simpl in *.
       eapply Step.
       { red. red. intros.
         destruct (mfix f x0 x); constructor. }

@@ -1,3 +1,5 @@
+Require Import RelationClasses.
+
 Class ILogic (L : Type) : Type :=
 { lentails : L -> L -> Prop
 ; ltrue : L
@@ -7,11 +9,31 @@ Class ILogic (L : Type) : Type :=
 ; limpl : L -> L -> L
 }.
 
+Class ILogicOk L (IL : ILogic L) : Type :=
+{ Refl_lentails :> Reflexive lentails
+; Trans_lentails :> Transitive lentails
+; ltrueR : forall G, lentails G ltrue
+; lfalseL : forall G, lentails lfalse G
+; landR : forall G P Q, lentails G P -> lentails G Q -> lentails G (land P Q)
+; landL1 : forall G P Q, lentails P G -> lentails (land P Q) G
+; landL2 : forall G P Q, lentails Q G -> lentails (land P Q) G
+; lorR1  : forall G P Q, lentails G P -> lentails G (lor P Q)
+; lorR2  : forall G P Q, lentails G Q -> lentails G (lor P Q)
+; limplR : forall G P Q, lentails G (limpl P Q) -> lentails (land P G) Q
+; limplL : forall G P Q, lentails (land P G) Q -> lentails G (limpl P Q)
+}.
+
 Class Quant (L : Type) : Type :=
 { lforall : forall (i : Type), (i -> L) -> L
 ; lexists : forall (i : Type), (i -> L) -> L
 }.
 
+Class QuantOk L (IL : ILogic L) (Q : Quant L) : Prop :=
+{ lforallR : forall i (P : i -> L) G, (forall x, lentails G (P x)) -> lentails G (lforall _ P)
+; lforallL : forall i (P : i -> L) G x, lentails (P x) G -> lentails (lforall i P) G
+; lexistsL : forall i (P : i -> L) G, (forall x, lentails (P x) G) -> lentails (lexists _ P) G
+; lexistsR : forall i (P : i -> L) G x, lentails G (P x) -> lentails G (lexists i P)
+}.
 
 Instance ILogic_Prop : ILogic Prop :=
 { lentails := fun x y => x -> y
@@ -22,6 +44,9 @@ Instance ILogic_Prop : ILogic Prop :=
 ; limpl := fun x y => x -> y
 }.
 
+Instance ILogicOk_Prop : ILogicOk _ ILogic_Prop.
+Admitted.
+
 Instance ILogic_Fun (T L : Type) (IL : ILogic L) : ILogic (T -> L) :=
 { lentails := fun P Q => forall x, lentails (P x) (Q x)
 ; ltrue := fun _ => ltrue
@@ -31,12 +56,21 @@ Instance ILogic_Fun (T L : Type) (IL : ILogic L) : ILogic (T -> L) :=
 ; limpl := fun P Q x => limpl (P x) (Q x)
 }.
 
+Instance ILogicOk_Fun T L IL (ILO : @ILogicOk L IL): ILogicOk _ (@ILogic_Fun T L IL).
+Admitted.
+
 Instance Quant_Prop : Quant Prop :=
 { lforall := fun T P => forall x : T, P x
 ; lexists := fun T P => exists x : T, P x
 }.
 
+Instance QuantOk_Prop : QuantOk _ _ Quant_Prop.
+Admitted.
+
 Instance Quant_Fun (T L : Type) (IL : Quant L) : Quant (T -> L) :=
 { lforall := fun T P x => lforall T (fun y => P y x)
 ; lexists := fun T P x => lexists T (fun y => P y x)
 }.
+
+Instance QuantOk_Fun T L IL Q (ILO : @ILogicOk L IL) : QuantOk _ (ILogic_Fun _ _ IL) (Quant_Fun T L Q).
+Admitted.
