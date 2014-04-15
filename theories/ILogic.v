@@ -28,12 +28,22 @@ Class Quant (L : Type) : Type :=
 ; lexists : forall (i : Type), (i -> L) -> L
 }.
 
+
 Class QuantOk L (IL : ILogic L) (Q : Quant L) : Prop :=
 { lforallR : forall i (P : i -> L) G, (forall x, lentails G (P x)) -> lentails G (lforall _ P)
 ; lforallL : forall i (P : i -> L) G x, lentails (P x) G -> lentails (lforall i P) G
 ; lexistsL : forall i (P : i -> L) G, (forall x, lentails (P x) G) -> lentails (lexists _ P) G
 ; lexistsR : forall i (P : i -> L) G x, lentails G (P x) -> lentails G (lexists i P)
 }.
+
+Notation "P |-- Q" := (@lentails _ _ P Q) (at level 50).
+Notation "P //\\ Q" := (@land _ _ P Q) (at level 80).
+Notation "P \\// Q" := (@lor _ _ P Q) (at level 85).
+Notation "P -->> Q" := (@limpl _ _ P Q) (at level 90).
+Notation "'All' x : T , P" := (@lforall _ _ T (fun x => P)) (at level 200).
+Notation "'Ex' x : T , P" := (@lexists _ _ T (fun x => P)) (at level 200).
+Notation "'All' x , P" := (@lforall _ _ _ (fun x => P)) (at level 200, only parsing).
+Notation "'Ex' x , P" := (@lexists _ _ _ (fun x => P)) (at level 200, only parsing).
 
 Instance ILogic_Prop : ILogic Prop :=
 { lentails := fun x y => x -> y
