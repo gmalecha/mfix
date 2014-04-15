@@ -1,6 +1,8 @@
 Require Import Lt.
 Require Import Omega.
+Require Import Relation_Definitions.
 Require Import RelationClasses.
+Require Import Morphisms.
 Require Import MFix.Monad.
 Require Import MFix.ILogic.
 Require Import MFix.Fuel.
@@ -14,36 +16,72 @@ Section monotone.
   | None_LTE :  forall x  , LTE_option None x
   | Some_LTE :  forall (x : A), LTE_option (Some x) (Some x).
 
-  Definition lteM {A} (mx : M A) (my : M A) :=
-    forall n, LTE_option (mx n) (my n).
+  Definition lteM {A} : M A -> M A -> Prop :=
+    (le ==> LTE_option)%signature.
 
-  Definition monotoneM {A} (r : M A) : Prop :=
-    forall n m, n < m -> LTE_option (r n) (r m).
+  Definition lteMF {A B} : relation (B -> M A) :=
+    pointwise_relation _ (@lteM A).
 
-  Definition monotoneF {A B} (f : A -> M B) : Prop :=
-    forall x, monotoneM (f x).
+  Definition monotoneM {A} : M A -> Prop :=
+    Proper lteM.
 
-  Definition lteP {A} (P Q : M A -> Prop) : Prop :=
-    forall x y, lteM x y -> P x -> P y.
+  Definition monotoneF {A B} : (A -> M B) -> Prop :=
+    Proper lteMF.
 
-  Definition ltePF {A B} (P Q : (B -> M A) -> Prop) : Prop :=
-    forall v : B,
-    forall x y, lteM (x v) (y v) -> P x -> P y.
+  Definition lteP {A} : relation (M A -> Prop) :=
+    (lteM ==> Basics.impl)%signature.
 
-  Instance Refl_lteM {T} : Reflexive (@lteM T).
+  Definition ltePF {A B} : relation ((B -> M A) -> Prop) :=
+    (pointwise_relation _ (@lteM _) ==> Basics.impl)%signature.
+
+  Lemma monotoneF_mfix
+  : forall T U (f : (T -> M U) -> _),
+      (Proper (lteMF ==> lteMF) f) ->
+      monotoneF (mfix f).
+  Proof.
+    unfold monotoneF, monotoneM.
+    intros. red. red. red. red. red.
+    intros a n; revert a.
+    induction n.
+    { simpl in *. intros. constructor. }
+    { intros. destruct y.
+      { exfalso. omega. }
+      { simpl. unfold lteMF, lteM in H.
+        eapply H. 2: omega.
+        intros.
+        red. intros. red. intros.
+        eapply IHn. omega. } }
+  Qed.
+
+  Lemma Proper_mfix
+  : forall T U,
+      Proper ((lteMF ==> lteMF) ==> lteMF) (@mfix T U).
+  Proof.
+    intros.
+    repeat red. intros. revert a.
+    generalize dependent y0.
+    induction x0.
+    { intros. simpl. constructor. }
+    { intros. destruct y0.
+      { exfalso. omega. }
+      { simpl. eapply H; eauto.
+        repeat red; intros.
+        eapply IHx0. omega. } }
+  Qed.
+
+(*
+  Instance Refl_lteM {T} : forall x, Proper Reflexive (@lteM T).
   Proof.
     red. intro. red. intros.
-    destruct (x n). constructor. constructor.
+    destruct (x n); try constructor. (** TODO: Not true! **)
     (** TODO: cleaner proof **)
-  Qed.
+  Admitted.
+*)
+
 
 End monotone.
 
 Section IndexedInd.
-  (* Indexed fixpoint induction, take4 *)
-  (* Critique:
-    - Too low level, you need to unfold ret and bind to get anywhere.
-   *)
   Definition FuelProp := fuel -> Prop.
 
   Definition Inj : Prop -> FuelProp := fun P f => f > 0 -> P.
@@ -79,6 +117,7 @@ Section IndexedInd.
     Variable P : (A -> M B) -> FuelProp.
     Variable f : (A -> M B) -> A -> M B.
 
+    Hypothesis Proper_f : Proper (lteMF ==> lteMF) f.
     Hypothesis Pok : forall x y,
                        (forall v, lteM (x v) (y v)) ->
                        (forall n m, n <= m -> P y n -> P x m).
@@ -94,11 +133,12 @@ Section IndexedInd.
       { intros. eapply Pok.
         2: instantiate (1 := x); auto.
         2: eapply IHx.
-        intros. eapply Refl_lteM.
+        intros. eapply Proper_mfix. eapply Proper_f.
         intros. eapply H. omega. }
     Qed.
   End unfold.
 
+(*
   Context {A : Type}.
   Variable P : M A -> FuelProp.
 (*  Variable G : FuelProp. *)
@@ -120,11 +160,11 @@ Section IndexedInd.
       intros.
       eapply Pok. instantiate (1 := x). omega. eapply IHx. trivial. }
   Qed.
+*)
 
-
-  Theorem lob' : forall P, FuelPropOk P -> lentails (later P) P -> lentails ltrue P.
+  Theorem lob : forall P, FuelPropOk P -> lentails (later P) P -> lentails ltrue P.
   Proof.
-    clear. intros.
+    intros.
     red. simpl.
     induction x.
     { destruct H. auto. }
@@ -133,33 +173,6 @@ Section IndexedInd.
       eapply H0. intros.
       destruct H. eapply H3. 2: eapply IHx; auto. omega. }
   Qed.
-(*
-  Variable (A B : Type).
-  Variable P : (A -> M B) -> FuelProp.
-  Hypothesis Pok : forall x y,
-                     (forall v, lteM (x v) (y v)) ->
-                     (forall n m, n <= m -> P x m -> P y n).
-  Variable val : M A.
-
-  Variable f : (A -> M B) -> (A -> M B).
-  Variable G : FuelProp.
-
-  Hypothesis Step
-  : lentails G (limpl ((laterF P) (mfix f)) (P (mfix f))).
-
-  (** TODO: It really seems like there should be two rules, one for proving
-   ** total correctness and the other for proving partial correctness
-   **)
-  Theorem mfixind1 : lentails G (P (mfix f)).
-  Proof.
-    red. simpl.
-    induction x.
-    { admit. }
-    { simpl in *. unfold laterF, later in *. intros.
-      
-
-  Qed.
-*)
 
 End IndexedInd.
 
@@ -217,7 +230,7 @@ Module ExampleFactorial.
       specialize (H0 t). intuition. }
     { destruct H1. auto.
       red in H.
-      assert (m < S m0) by omega.
+      assert (m <= S m0) by omega.
       specialize (H m (S m0) H3).
       destruct H; simpl; auto.
       specialize (H0 x). intuition.
@@ -236,16 +249,38 @@ Module ExampleFactorial.
     intros. apply FuelPropOk_Inj.
   Qed.
 
-  Instance Trans_lentails : Transitive (@lentails FuelProp (ILogic_Fun fuel Prop ILogic_Prop) ).
-  Admitted.
+  Lemma lteM_ret T (t : T) : lteM (ret t) (ret t).
+  Proof.
+    constructor.
+  Qed.
+
+  Lemma lteM_bind T U (c c' : M T) (f f' : T -> M U)
+  : lteM c c' -> lteMF f f' -> lteM (bind c f) (bind c' f').
+  Proof.
+    intros.
+    unfold bind. red. red. intros.
+    specialize (H x y H1).
+    destruct H. constructor.
+    apply H0. auto.
+  Qed.
+
+  Lemma monotoneF_fact : monotoneF fact.
+  Proof.
+    apply monotoneF_mfix.
+    unfold mkfact.
+    red. red. intros. red. red. intros.
+    destruct a. apply lteM_ret.
+    eapply lteM_bind. apply H.
+    red. red. intros. apply lteM_ret.
+  Qed.
 
   Opaque lentails lforall.
 
   Example fact_correct
   : lentails ltrue (Pfact fact).
   Proof.
-    assert (monotoneF fact) by admit.
-    eapply lob'.
+    generalize monotoneF_fact; intro.
+    eapply lob.
     { eapply FuelPropOk_Pfact; auto. }
     { unfold Pfact, fact.
       set (P := fun x => lforall nat
