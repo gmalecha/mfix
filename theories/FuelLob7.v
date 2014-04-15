@@ -34,6 +34,9 @@ Section monotone.
   Definition ltePF {A B} : relation ((B -> M A) -> Prop) :=
     (pointwise_relation _ (@lteM _) ==> Basics.impl)%signature.
 
+  Definition observable {A B} : relation ((A -> M B) -> nat -> Prop) :=
+    (pointwise_relation _ lteM ==> le ==> Basics.impl)%signature.
+
   Lemma monotoneF_mfix
   : forall T U (f : (T -> M U) -> _),
       (Proper (lteMF ==> lteMF) f) ->
@@ -68,16 +71,6 @@ Section monotone.
         repeat red; intros.
         eapply IHx0. omega. } }
   Qed.
-
-(*
-  Instance Refl_lteM {T} : forall x, Proper Reflexive (@lteM T).
-  Proof.
-    red. intro. red. intros.
-    destruct (x n); try constructor. (** TODO: Not true! **)
-    (** TODO: cleaner proof **)
-  Admitted.
-*)
-
 
 End monotone.
 
@@ -118,13 +111,17 @@ Section IndexedInd.
     Variable f : (A -> M B) -> A -> M B.
 
     Hypothesis Proper_f : Proper (lteMF ==> lteMF) f.
-    Hypothesis Pok : forall x y,
-                       (forall v, lteM (x v) (y v)) ->
-                       (forall n m, n <= m -> P y n -> P x m).
+(*    Hypothesis Pok : Proper observable P. *)
+    Hypothesis Pok : (** this statement should say something like:
+the second parameter to P is only fed to (mfix f) **) True.
     Variable Pok' : FuelPropOk (P (mfix f)).
 
     Theorem mfix_unfold
     : lentails (laterF P (f (mfix f))) (P (mfix f)).
+    (** I could put some sort of delta in here, that would say
+              P (f (delta (mfix f))) = (P (mfix f)).
+        then there would need to be a property about delta and now...
+     **)
     Proof.
       simpl. unfold laterF, later.
       induction x.
@@ -137,30 +134,6 @@ Section IndexedInd.
         intros. eapply H. omega. }
     Qed.
   End unfold.
-
-(*
-  Context {A : Type}.
-  Variable P : M A -> FuelProp.
-(*  Variable G : FuelProp. *)
-  Variable val : M A.
-
-  Hypothesis Pok0 : forall val, P val 0.
-  Hypothesis Pok : forall n m val, m <= n -> P val n -> P val m.
-
-  Hypothesis Step
-  : lentails ltrue (limpl ((laterF P) val) (P val)).
-
-  Theorem lob : lentails ltrue (P val).
-  Proof.
-    red. simpl.
-    induction x.
-    { auto. }
-    { simpl in *. unfold laterF, later in *.
-      intros. eapply Step; auto.
-      intros.
-      eapply Pok. instantiate (1 := x). omega. eapply IHx. trivial. }
-  Qed.
-*)
 
   Theorem lob : forall P, FuelPropOk P -> lentails (later P) P -> lentails ltrue P.
   Proof.
@@ -264,15 +237,75 @@ Module ExampleFactorial.
     apply H0. auto.
   Qed.
 
-  Lemma monotoneF_fact : monotoneF fact.
+  Lemma Proper_mkfact : Proper (lteMF ==> lteMF) mkfact.
   Proof.
-    apply monotoneF_mfix.
     unfold mkfact.
     red. red. intros. red. red. intros.
     destruct a. apply lteM_ret.
     eapply lteM_bind. apply H.
     red. red. intros. apply lteM_ret.
   Qed.
+
+  Lemma monotoneF_fact : monotoneF fact.
+  Proof.
+    apply monotoneF_mfix. apply Proper_mkfact.
+  Qed.
+
+  Lemma lentails_lforall
+  : forall T (P Q : T -> FuelProp),
+      (forall x, lentails (P x) (Q x)) ->
+      lentails (lforall _ P) (lforall _ Q).
+  Proof.
+    intuition. apply lforallR. intros. eapply lforallL. eapply H.
+  Qed.
+
+  Lemma now_ret : forall T (x : T) P, now (ret x) P = P x.
+  Proof.
+    intros. compute. reflexivity. (** eta **)
+  Qed.
+
+  Lemma now_bind
+  : forall T U (x : M T) (f : T -> M U) P Q G,
+      G |-- (now x Q //\\ lforall _ (fun x' => Q x' -->> now (f x') P)) ->
+      G |-- now (bind x f) P.
+  Proof.
+    unfold now, bind. simpl. intros.
+    specialize (H x0 H0). clear H0.
+    destruct (x x0); auto.
+    intuition.
+    eapply H1. eauto.
+  Qed.
+
+  Lemma lentails_Inj : forall (P Q : Prop) G, lentails G (Inj Q) -> (Q -> P) -> lentails G (Inj P).
+  Proof.
+    unfold Inj. red; simpl; intuition.
+    eapply H0. eauto.
+  Qed.
+
+  Lemma lentails_Inj' : forall (P : Prop) G, P -> lentails G (Inj P).
+  Proof.
+    unfold Inj; red; simpl; intuition.
+  Qed.
+
+  Lemma lentails_later
+  : forall P Q,
+      lentails P Q ->
+      lentails (later P) (later Q).
+  Proof.
+    unfold later, lentails; simpl. intuition.
+  Qed.
+
+  Lemma Proper_observable_P
+  : Proper observable (fun x : nat -> M nat =>
+                         All n, now (x n) (fun val : nat => Inj (val = rfact n))).
+  Proof.
+    repeat red. intros.
+    red in H1. simpl in *.
+    specialize (H1 x1). red in H1.
+    specialize (H x1 _ _ H0).
+    revert H1. revert H.
+    
+    
 
   Opaque lentails lforall.
 
@@ -288,54 +321,27 @@ Module ExampleFactorial.
             now (x n) (fun val : nat => Inj (val = rfact n)))).
       change (lentails (later (P (mfix mkfact))) (P (mfix mkfact))).
       etransitivity. 2: eapply mfix_unfold.
-      3: eapply FuelPropOk_Pfact; auto.
+      4: eapply FuelPropOk_Pfact; auto.
+      2: eapply Proper_mkfact.
       unfold laterF.
       unfold P.
-      Lemma lentails_later
-      : forall P Q,
-          lentails P Q ->
-          lentails (later P) (later Q).
-      Proof.
-      Admitted.
       eapply lentails_later.
-      Lemma lentails_lforall
-      : forall T (P Q : T -> FuelProp),
-          (forall x, lentails (P x) (Q x)) ->
-          lentails (lforall _ P) (lforall _ Q).
-      Proof.
-      Admitted.
-      eapply lentails_lforall; intros.
+      eapply lforallR; intros.
       unfold mkfact at 2.
       destruct x; simpl.
-      { Lemma now_ret : forall T (x : T) P, now (ret x) P = P x.
-        Proof.
-          intros. compute. reflexivity. (** eta **)
-        Qed.
+      { rewrite now_ret. eapply lentails_Inj'. reflexivity. }
+      { eapply now_bind.
+        eapply landR.
+        eapply lforallL. reflexivity.
+        eapply lforallR.
+        intros. apply limplL.
+        apply landL1.
         rewrite now_ret.
-        admit. }
-      { Lemma now_bind
-        : forall T U (x : M T) (f : T -> M U) P,
-            now (bind x f) P = ?
-                           
-      
-      
+        eapply lentails_Inj. reflexivity.
+        intros; subst; auto. }
+      { 
 
-
-    { unfold mkfact, satisfiesF, later; simpl. intros.
-      destruct x0; simpl.
-      { reflexivity. }
-      { unfold bind.
-        destruct x.
-        { inversion H0. }
-        { specialize (H0 x0).
-          assert (x < S x) by omega.
-          do 2 red in H. specialize (H x0 x (S x) H1).
-          inversion H.
-          { subst. rewrite <- H3 in *.
           
-        remember (r x0 x). destruct o.
-        { simpl. intros. red.
-
 
   Example fact_correct :
     forall m,  (m > n) -> fact n m = Some (rfact n).
